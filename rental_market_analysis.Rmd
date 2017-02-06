@@ -1,0 +1,340 @@
+---
+title: "Analyser le marché immobilier sous R"
+author: "FChemin"
+date: "30/01/2017"
+output: 
+  html_document: 
+    keep_md: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(include = TRUE)
+```
+
+```{r include=FALSE}
+liens <- read.csv("links.csv", header = TRUE, stringsAsFactors = FALSE)
+df <- read.csv("rental_market.csv", header = TRUE, stringsAsFactors = FALSE)
+df <- df[,-5]
+```
+## Introduction
+
+S'installer dans une nouvelle ville commence bien souvent par la recherche d'un logement.
+Cependant, obtenir une vue d'ensemble du marché locatif n'est pas une mince affaire:
+comment savoir que le loyer proposé n'est pas surcoté ? Quel est le loyer moyen
+pour un appartement de 75m² avec 2 chambres ? Nous allons voir ici comment récupérer
+ces informations à partir d'Internet et les analyser à l'aide du langage de
+programmation R.
+
+Cet article sera divisé en trois parties: récupérer les données, nettoyer ces données
+et enfin, les analyser. Dans la première partie, nous créerons un outil afin de 
+collecter les données issues de sites web (web scraper). Dans la seconde partie, 
+nous formaterons les données afin qu'elles puissent être aisément manipulées. 
+Enfin, dans la troisième partie, nous analyserons et visualiserons ces données 
+afin de se faire une idée du marché locatif.
+
+## Web scraping
+
+Lorsque nous n'avons pas de données déjà disponibles, il nous faut les récupérer
+à l'aide d'un web scraper, autrement dit, quelques lignes de code qui vont télécharger
+les pages web d'annonces de logement à louer, récupérer les données et les 
+enregistrer dans un fichier CSV (par exemple) automatiquement pour nous.
+
+#### Un peu de planification
+
+La première chose à faire est de déterminer les informations dont nous avons besoin.
+Ici, nous voulons cibler les logements en location pour la ville de Brest, France.
+Pour se faire une idée du marché locatif, nous aurons besoin des informations suivantes:
+
+* le montant du loyer
+* le type de location
+* le nombre de pièces du logement
+* la superficie du logement
+
+## Du côté du HTML
+
+Nous voulons que notre outil récupère automatiquement les informations contenues
+dans la page web d'une annonce. Pour se faire, il nous faut inspecter le code HTML
+d'une page web:
+
+![](/home/florian/Documents/Data Science Projects/Rental Market Analysis/source-code.png)
+
+Sur cette image nous pouvons voir où est stockée la valeur concernant le loyer.
+
+Une extension particulièrement utile pour les utilisateurs de Chrome souhaitant 
+récupérer les sélecteurs CSS d'une page web s'appelle [SelectorGadget](http://selectorgadget.com/).
+Nous en ferons usage lorsque nous détaillerons la création de notre web scraper.
+
+## Librairies utilisées
+
+Pour ce projet, nous faisons appel aux librairies suivantes:
+
+```{r results='hide', message=FALSE}
+library(rvest)
+library(magrittr)
+library(stringr)
+library(dplyr)
+library(plotly)
+```
+
+**rvest**
+
+Nous utiliserons ce paquet pour télécharger, lire et récupérer le contenu d'une page web.
+
+**magrittr**
+
+Ce paquet permet d'améliorer la lecture et la maintenance de notre code à l'aide de
+l'opérateur spécial %>%.
+
+**stringr**
+
+Stringr facilite les opérations sur les chaînes de caractères.
+
+**plotly**
+
+Ce sera notre outil de choix pour la création de nos visualisations intéractives.
+
+## Écriture du code
+
+La première étape de l'écriture de notre code consistera à créer deux nouvelles
+fonctions. La première fonction va nous permettre de récupérer les liens des annonces comprises
+dans un résultat de recherche:
+
+```{r eval=FALSE}
+get_ads_links = function(zipcode){
+    
+    url_base <- "https://www.sitekelonvescrap.fr/locations/offres/bretagne/"
+    
+    result <- NULL
+    
+    page <- url_base %>% paste("?o=", 1, "&zz=", zipcode, sep = "") %>% 
+        read_html()
+        
+    tags <- "//section/ul/li/a[contains(@href, 'locations')]" 
+        
+    ad_links <- page %>% html_nodes(xpath = tags) %>% 
+        html_attr("href")
+    ad_links <- paste("https:", ad_links, sep = "")
+    
+    result <- c(result, ad_links)
+    
+    result <- data.frame(result, stringsAsFactors = FALSE)
+    
+    write.csv(result, file = "links.csv", row.names = FALSE)
+    
+    return(result)
+    
+}
+```
+
+La seconde fonction consiste à récupérer les informations qui nous intéressent 
+dans chacune des annonces:
+
+```{r eval=FALSE}
+get_ads_details = function(url){
+    
+    result <- NULL
+    
+    page <- read_html(url[1,])
+        
+    cost <- page %>% html_node(css = ".item_price .value") %>% 
+        html_text()
+        
+    category <- page %>% html_node(css = ".line_city+ .line .value") %>% 
+        html_text()
+        
+    rooms <- page %>% html_node(css = ".line:nth-child(8) .value") %>% 
+        html_text()
+        
+    area <- page %>% html_node(css = ".line:nth-child(10) .value") %>% 
+        html_text()
+    
+    result <- rbind(result,c(cost, category, rooms, area, url[1,]))
+    
+    df <- data.frame(result, stringsAsFactors = FALSE)
+    names(df) <- c("Monthly Rent", "Category", "Number of Rooms", "Area", "URL")
+    
+    write.csv(df, file = "rental_market.csv", row.names = FALSE)
+    
+    return(df)
+}
+```
+
+Ici, nous parcourons chacun des liens obtenus à l'aide de la précédente fonction
+et récupérons les informations concernant le prix du loyer, la catégorie du logement,
+le nombre de pièces qu'il comprend et enfin, sa superficie. Toutes ses informations
+sont enregistrées dans une trame de données que nous exportons au format CSV
+pour utilisation ou ajout futur.
+
+## Notre web scraper à l'usage
+
+Maintenant que nous avons créer les fonctions nécessaires à notre outil, nous
+pouvons l'utiliser pour débuter notre travail d'analyse:
+
+```{r eval=FALSE}
+liens <- get_ads_links(zipcode = 29200)
+df <- get_ads_details(liens)
+```
+
+Nous obtenons alors une trame de données que nous pouvons aisément manipuler.
+
+```{r}
+str(df)
+head(df, 3)
+```
+
+Nous avons du nettoyage à faire avant de pouvoir analyser ces données !
+
+## Ne garder que le nécessaire
+
+La recherche de locations retourne plusieurs types de biens: appartement, maison, terrain
+ou encore parking. Nous souhaitons ne conserver que les informations concernant
+des appartements et des maisons. 
+Ensuite, il nous faut isoler les nombres des valeurs concernant le montant du loyer
+et la surface de l'habitation.
+Puis, nous transformons les variables concernant le type d'habitation en facteurs
+et enfin, nous supprimons les lignes de notre trame de données ayant des informations
+manquantes (NAs). Voici le code utilisé pour cette partie:
+
+```{r warning=FALSE}
+df <- subset(df, df$Category %in% c("Appartement", "Maison"), drop = TRUE)
+
+df$Monthly.Rent <- gsub(" ", "", df$Monthly.Rent)
+expr <- "[[:digit:]]+"
+df$Monthly.Rent <- df$Monthly.Rent %>% str_extract(expr) %>% as.integer()
+
+df$Area <- df$Area %>% str_extract(expr) %>% as.integer()
+
+df$Category <- as.factor(gsub("Appartement", 1, df$Category))
+df$Category <- as.factor(gsub("Maison", 2, df$Category))
+df$Number.of.Rooms <- as.integer(df$Number.of.Rooms)
+
+df <- df[complete.cases(df),]
+rownames(df) <- NULL
+
+head(df, 5)
+```
+
+C'est bien mieux ainsi ! Nous pouvons maintenant commencer à manipuler nos
+données afin de les analyser et mieux les comprendre.
+
+## Exploration des données
+
+Commençons par regarder le sommaire de nos données:
+
+```{r}
+summary(df)
+```
+
+Il semblerait que certaines valeurs concernant le nombre de pièces (22, vraiment ?!),
+le montant du loyer (10€, autant dire gratuit !) ou encore la superficie (3668m²...)
+soient erronnées. Regardons de plus près quelles lignes sont concernées et 
+ce que nous pouvons en faire:
+
+```{r}
+df[which(df$Monthly.Rent == 10),]
+df[which(df$Number.of.Rooms == 22),]
+df[which(df$Area > 200),]
+```
+
+Concernant la location au loyer de 10€, pour une maison avec 7 chambres et 140m², 
+il s'agit soit d'une erreur ou bien d'une stratégie pour attirer du monde 
+sur l'annonce. Nous ne conserverons donc pas cette ligne:
+
+```{r}
+df <- df[-which(df$Monthly.Rent == 10),]
+rownames(df) <- NULL
+```
+
+Pour la location de 22m² avec 22 pièces, cela ressemble à une erreur lors de la
+saisie du formulaire pour créer l'annonce. Étant donnée la surface, nous faisons
+le choix de considérer qu'il s'agit d'un studio et donc, d'une seule pièce:
+
+```{r}
+df$Number.of.Rooms[563] <- 1
+```
+
+Concernant les superficies, nous préférons supprimer les entrées ayant une
+superficie supérieure à 200m². Ceci nous semble être un choix raisonnable afin
+de ne pas fausser notre analyse avec des cas particuliers (outliers):
+
+```{r}
+df <- df[-which(df$Area > 200),]
+rownames(df) <- NULL
+```
+
+Regardons une dernière fois notre sommaire:
+
+```{r}
+summary(df)
+```
+
+Cette fois-ci, la distribution dans chaque catégorie nous semble beaucoup plus réaliste
+et nous pouvons faire quelques observations.
+
+Regardons pour commencer l'offre de locations d'appartement:
+
+```{r results='hide'}
+prop_apt <- round(sum(df$Category == 1)/nrow(df)*100 , 0)
+
+df_apt <- subset(df, df$Category == 1, drop = TRUE)
+
+range(df_apt$Monthly.Rent)
+median(df_apt$Monthly.Rent)
+
+range(df_apt$Area)
+median(df_apt$Area)
+```
+
+`r prop_apt`% des annonces de location concernent des appartements. Le loyer
+commence à `r min(df_apt$Monthly.Rent)`€ avec un maximum de `r max(df_apt$Monthly.Rent)`€ 
+pour un **loyer median de `r median(df_apt$Monthly.Rent)`€**. La surface médiane quant à elle
+est de **`r median(df_apt$Area)`m²**.
+
+## Quelques visualisations
+
+Pour commencer, regardons la distribution du nombre de pièces selon le type de location:
+
+```{r echo=FALSE}
+rooms_bucket_apt <- df_apt %>% count(Number.of.Rooms)
+
+plot_ly(rooms_bucket_apt, x = ~Number.of.Rooms, y = ~n, type = "bar") %>%
+    layout(title = "Total des appartements par pièces", xaxis = list(title = "Nombre de pièces"), 
+           yaxis = list(title = "Total"))
+```
+
+Le même graphique mais cette fois-ci pour les maisons:
+
+```{r echo=FALSE}
+df_house <- subset(df, df$Category == 2, drop = TRUE)
+rooms_bucket_house <- df_house %>% count(Number.of.Rooms)
+
+plot_ly(rooms_bucket_house, x = ~Number.of.Rooms, y = ~n, type = "bar") %>%
+    layout(title = "Total des maisons par pièces", xaxis = list(title = "Nombre de pièces"), 
+           yaxis = list(title = "Total"))
+```
+
+Enfin, un graphique à trois dimensions comparant le loyer des locations selon leur
+superficie et le nombre de pièces qu'elles comprennent. Ce graphique est intéractif,
+n'hésitez pas à zoomer sur une zone qui vous intéresse ou passer votre souris sur
+un des points pour obtenir le détail de ses valeurs:
+
+```{r echo=FALSE}
+plot_ly(df_apt, x = ~Area, y = ~Monthly.Rent) %>% 
+    add_markers(text = ~paste(paste("Loyer : ", Monthly.Rent), paste("Pièces : ", Number.of.Rooms), 
+                              paste("Superficie : ", Area) , sep = "<br />"), color = ~Number.of.Rooms, 
+                symbol = I("diamond"), size = ~Number.of.Rooms, hoverinfo = "text") %>% 
+    colorbar(title = "Nombre de pièces") %>%
+    layout(title = "Marché immobilier brestois", xaxis = list(title = "Superficie"), 
+           yaxis = list(title = "Loyer"))
+```
+
+## Conclusion
+
+Nous avons vu dans cet article comment obtenir des données lorsque nous n'en avons
+pas à notre disposition, les nettoyer, les explorer et créer des visuels afin 
+de s'en faire une meilleure idée.
+
+Ceci peut servir de base à un travail de recherche sur l'évolution des loyers, en
+datant chaque entrée de notre base de données afin de pouvoir faire une analyse de
+séries temporelles. Nous pourrions également nous servire de cette base de données
+pour modéliser le prix d'un loyer selon les caractéristiques du logement.

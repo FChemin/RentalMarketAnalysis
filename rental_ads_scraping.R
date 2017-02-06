@@ -7,7 +7,11 @@
 # R_version: 3.3.2
 # OS: linux-gnu
 
+<<<<<<< HEAD
 get_ads_link = function(zipcode){
+=======
+get_ads_links = function(zipcode){
+>>>>>>> HEAD@{4}
     
     # Requiring necessary libraries
     require(rvest)
@@ -21,6 +25,7 @@ get_ads_link = function(zipcode){
     
     for (i in 1:40){
         tryCatch({page <- url_base %>% paste("?o=", i, "&zz=", zipcode, sep = "") %>%
+<<<<<<< HEAD
                      read_html()
                  
                  tags <- "//section/ul/li/a[contains(@href, 'locations')]" # Setting our selector
@@ -39,10 +44,34 @@ get_ads_link = function(zipcode){
                  
                      Sys.sleep(runif(1, 5, 10))
                  }
+=======
+            read_html()
+        
+        tags <- "//section/ul/li/a[contains(@href, 'locations')]" # Setting our selector
+        
+        ad_links <- page %>% html_nodes(xpath = tags) %>% # Scraping data from web page and get ads links
+            html_attr("href")
+        ad_links <- paste("https:", ad_links, sep = "")
+        },
+        
+        error = function(e){NA},
+        
+        finally ={
+            result <- c(result, ad_links)
+            
+            Sys.sleep(runif(1, 5, 10))
+        }
+>>>>>>> HEAD@{4}
         )
     }
     
     result <- data.frame(result, stringsAsFactors = FALSE)
+<<<<<<< HEAD
+=======
+    
+    write.csv(result, file = "links.csv", row.names = FALSE)
+    
+>>>>>>> HEAD@{4}
     return(result)
     
 }
@@ -59,6 +88,7 @@ get_ads_details = function(url){
     # Looping over url pages to get desired values
     for (i in 1:nrow(url)){
         tryCatch({page <- read_html(url[i,])
+<<<<<<< HEAD
                  
                  cost <- page %>% html_node(css = ".item_price .value") %>% 
                      html_text()
@@ -80,6 +110,29 @@ get_ads_details = function(url){
                  
                      Sys.sleep(runif(1, 5, 10))
                  }
+=======
+        
+        cost <- page %>% html_node(css = ".item_price .value") %>% 
+            html_text()
+        
+        category <- page %>% html_node(css = ".line_city+ .line .value") %>% 
+            html_text()
+        
+        rooms <- page %>% html_node(css = ".line:nth-child(8) .value") %>% 
+            html_text()
+        
+        area <- page %>% html_node(css = ".line:nth-child(10) .value") %>% 
+            html_text()
+        },
+        
+        error = function(e){NA},
+        
+        finally = {
+            result <- rbind(result,c(cost, category, rooms, area, url[i,]))
+            
+            Sys.sleep(runif(1, 5, 10))
+        }
+>>>>>>> HEAD@{4}
         )
     }
     
@@ -87,5 +140,6 @@ get_ads_details = function(url){
     names(df) <- c("Monthly Rent", "Category", "Number of Rooms", "Area", "URL")
     
     write.csv(df, file = "rental_market.csv", row.names = FALSE)
+    
     return(df)
 }
