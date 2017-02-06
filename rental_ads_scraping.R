@@ -35,14 +35,15 @@ get_ads_links = function(zipcode){
         finally ={
             result <- c(result, ad_links)
             
-            lapply(result, cat, "\n", file = "links.txt", append = TRUE)
-            
             Sys.sleep(runif(1, 5, 10))
         }
         )
     }
     
-    result <- as.data.frame(result, stringsAsFactors = FALSE)
+    result <- data.frame(result, stringsAsFactors = FALSE)
+    
+    write.csv(result, file = "links.csv", row.names = FALSE)
+    
     return(result)
     
 }
@@ -87,5 +88,6 @@ get_ads_details = function(url){
     names(df) <- c("Monthly Rent", "Category", "Number of Rooms", "Area", "URL")
     
     write.csv(df, file = "rental_market.csv", row.names = FALSE)
+    
     return(df)
 }
