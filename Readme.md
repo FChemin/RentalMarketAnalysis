@@ -9,4 +9,11 @@ We use the Sys.sleep() function to not overload the web servers...
 You can find the analysis (french language) at this url: 
 https://fchemin.github.io/RentalMarketAnalysis/
 
+Todo-list:
+
+1) Scrape more websites to gather more data
+2) Automate web scraper and scrubbing scripts
+3) Create database with timestamped entries
+4) Implement text processing to retrieve informations about neighborhood from ads description
+
 Thank you for reading!
